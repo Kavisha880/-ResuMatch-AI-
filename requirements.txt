@@ -1,11 +1,13 @@
-python-dotenv
-pandas
 streamlit
+pandas
+requests
+python-dotenv
+python-docx
+uuid
 langchain==0.2.16
 langchain-core==0.2.38
 langchain-community==0.2.10
 langchain-groq
 openai
 chromadb==0.4.24
-python-docx
 pysqlite3-binary
