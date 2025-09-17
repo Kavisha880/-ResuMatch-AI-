@@ -1,10 +1,10 @@
 python-dotenv
 pandas
 streamlit
-langchain
-langchain-core
-langchain-community
+langchain==0.2.16
+langchain-core==0.2.38
+langchain-community==0.2.10
 langchain-groq
 openai
-chromadb
+chromadb==0.4.24
 python-docx
