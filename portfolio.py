@@ -5,7 +5,10 @@ import requests
 
 class Portfolio:
     def __init__(self, data=None, file_path=None):
-        self.chroma_client = chromadb.PersistentClient('vectorstore')
+        # self.chroma_client = chromadb.PersistentClient('vectorstore')
+        
+        client = chromadb.Client()
+
         self.collection = self.chroma_client.get_or_create_collection(name="portfolio")
 
         if file_path:   # Load from CSV
