@@ -1,7 +1,17 @@
 import pandas as pd
-import chromadb
+# import chromadb
 import uuid
 import requests
+import os, sys
+
+try:
+    __import__("pysqlite3")
+    sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
+except ImportError:
+    pass
+
+import chromadb
+
 
 class Portfolio:
     def __init__(self, data=None, file_path=None):
