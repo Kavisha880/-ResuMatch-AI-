@@ -1,11 +1,14 @@
 import os
 from typing import List, Dict
 
+import streamlit as st
 from dotenv import load_dotenv
+
 from langchain_groq import ChatGroq
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.exceptions import OutputParserException
+
 from docx import Document
 from docx.shared import Pt, RGBColor
 
@@ -14,16 +17,29 @@ load_dotenv()
 
 class Chain:
     def __init__(self):
-        # Initialize Groq LLM (make sure GROQ_API_KEY is set)
+        """
+        Initialize Groq LLM safely for Streamlit Cloud.
+        Reads from env first, then Streamlit Secrets.
+        """
+        key = os.getenv("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY")
+        if not key:
+            # Surface a friendly error in the UI instead of a silent crash
+            st.error("GROQ_API_KEY not found. Add it in Streamlit → Settings → Secrets.")
+            raise RuntimeError("Missing GROQ_API_KEY")
+
+        # Use `model=` (more version-proof than `model_name=`)
         self.llm = ChatGroq(
             temperature=0,
-            groq_api_key=os.getenv("GROQ_API_KEY"),
-            model_name="llama-3.3-70b-versatile"
+            groq_api_key=key,
+            model="llama-3.3-70b-versatile",
         )
 
+    # -------------------------------
+    # JD → structured JSON extractor
+    # -------------------------------
     def extract_jobs(self, jd_text: str):
         """
-        Extract structured job info (role, experience, skills, description) from job description text.
+        Extract structured job info (role, experience, skills, description) from raw JD text.
         Returns a list of dicts.
         """
         prompt_extract = PromptTemplate.from_template(
@@ -52,6 +68,9 @@ class Chain:
 
         return parsed if isinstance(parsed, list) else [parsed]
 
+    # -------------------------------
+    # Recruiter email generator
+    # -------------------------------
     def write_mail(self, job, links_flat: List[Dict], user_name, user_background, user_email):
         """
         Generate a personalized cold email for the given job + portfolio links + user info.
@@ -89,6 +108,9 @@ class Chain:
         })
         return res.content
 
+    # -------------------------------
+    # Resume (.docx) generator
+    # -------------------------------
     def _add_divider(self, doc):
         """Add a thin blue divider line between sections (minimal spacing)."""
         p = doc.add_paragraph("──────────────────────────────────────────────")
@@ -102,7 +124,7 @@ class Chain:
         Generate a one-page Resume in Word (.docx) format with:
         Summary → Education → Technical Skills → Soft Skills → Projects → Achievements
 
-        projects: flat list like [{"name": "...","link":"https://..."}, ...]
+        projects: flat list like [{"name": "...", "link": "https://..."}, ...]
         """
         doc = Document()
 
@@ -167,7 +189,7 @@ class Chain:
         if not projects:
             doc.add_paragraph("No matching projects found. Add portfolio links or GitHub username.")
         else:
-            for project in projects[:3]:  # max 3 (could be 2)
+            for project in projects[:3]:  # limit to 2–3 projects
                 project_name = project.get("name") or "Untitled Project"
                 project_link = project.get("link") or ""
 

@@ -1,15 +1,21 @@
 import uuid
+import logging
 import requests
 import pandas as pd
-import chromadb
 from typing import List, Dict
-
 
 class Portfolio:
     def __init__(self, data=None, file_path=None):
-        # Persist Chroma index in ./vectorstore
-        self.chroma_client = chromadb.PersistentClient('vectorstore')
-        self.collection = self.chroma_client.get_or_create_collection(name="portfolio")
+        # Try to use Chroma; if it fails on Cloud, fall back to in-memory matching
+        self.collection = None
+        self._fallback_rows = []
+        try:
+            import chromadb
+            self.chroma_client = chromadb.PersistentClient('vectorstore')  # writable local dir
+            self.collection = self.chroma_client.get_or_create_collection(name="portfolio")
+        except Exception as e:
+            self.chroma_client = None
+            logging.warning(f"Chroma disabled; using simple matching. Reason: {e}")
 
         if file_path:
             self.data = pd.read_csv(file_path)
@@ -22,7 +28,6 @@ class Portfolio:
         for col in ["Title", "Techstack", "Links"]:
             if col not in self.data.columns:
                 self.data[col] = ""
-
         self.data["Title"] = self.data["Title"].astype(str).fillna("")
         self.data["Techstack"] = self.data["Techstack"].astype(str).fillna("")
         self.data["Links"] = self.data["Links"].astype(str).fillna("")
@@ -59,6 +64,11 @@ class Portfolio:
 
     def load_portfolio(self):
         """Index projects in Chroma (id stable by URL to avoid dupes)."""
+        if self.collection is None:
+            # Fallback: cache rows for naive ranking
+            self._fallback_rows = self.data.to_dict("records")
+            return
+
         if self.collection.count() == 0 and not self.data.empty:
             docs, metas, ids = [], [], []
             for _, row in self.data.iterrows():
@@ -76,6 +86,28 @@ class Portfolio:
         Return a FLAT list of dicts like:
         [{'name': 'RepoName', 'link': 'https://github.com/...'}, ...]
         """
+        # Fallback path when Chroma is unavailable
+        if self.collection is None:
+            if isinstance(skills, str):
+                keys = {s.strip().lower() for s in skills.replace("|", ",").split(",") if s.strip()}
+            else:
+                keys = {str(s).strip().lower() for s in (skills or []) if str(s).strip()}
+
+            def score(row):
+                hay = (row.get("Title","") + " " + row.get("Techstack","")).lower()
+                return sum(k in hay for k in keys) if keys else 0
+
+            ranked = sorted(self._fallback_rows, key=score, reverse=True)
+            flat, seen = [], set()
+            for row in ranked[:6]:
+                link = row.get("Links","")
+                if link and link not in seen:
+                    seen.add(link)
+                    title = row.get("Title") or (link.split("/")[-1] if link else "Project")
+                    flat.append({"name": title, "link": link})
+            return flat
+
+        # Normal Chroma path
         if self.collection.count() == 0:
             return []
 
@@ -86,7 +118,6 @@ class Portfolio:
             safe_skills = [s for s in skills if isinstance(s, str) and s.strip()]
             query_texts = ["; ".join(safe_skills[:10])] + safe_skills[:3] if safe_skills else ["software engineering"]
 
-        # Return a few best hits
         n_results = min(max(2, len(self.data)), 6) if not self.data.empty else 3
         out = self.collection.query(query_texts=query_texts, n_results=n_results)
 
